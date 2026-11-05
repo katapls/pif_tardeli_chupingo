@@ -1,0 +1,109 @@
+# Projeto de monitoramento de desperdício
+
+Aplicação web desenvolvida em Laravel para registrar e acompanhar o desperdício de alimentos em uma escola. O sistema permite cadastrar e autenticar usuários, registrar refeições e pesos de desperdício, visualizar indicadores e receber leituras enviadas por dispositivos IoT.
+
+## Funcionalidades
+
+- Cadastro e autenticação de usuários.
+- Registro de cardápio, período, salas atendidas, quantidade preparada, meta de desperdício, peso descartado e observações.
+- Consulta dos registros e painel com indicadores de desperdício.
+- Recebimento de leituras de balança pela API.
+
+## Tecnologias
+
+- PHP 8.2 ou superior e Laravel 12.
+- SQLite como banco padrão no arquivo `.env.example` (a conexão pode ser configurada no ambiente).
+- Node.js e npm para compilar os recursos da interface.
+- Cliente PHP MQTT incluído nas dependências; a API de leituras documentada abaixo recebe requisições HTTP. O uso de MQTT pelo dispositivo não está confirmado pelo fluxo atual.
+
+## Requisitos
+
+- PHP 8.2 ou superior, com extensões requeridas pelo Laravel.
+- Composer.
+- Node.js e npm.
+
+## Instalação e execução
+
+Na raiz do projeto, no PowerShell:
+
+```powershell
+composer install
+Copy-Item .env.example .env
+php artisan key:generate
+php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
+php artisan migrate
+npm install
+npm run build
+php artisan serve
+```
+
+Se já existir um `.env`, não o substitua pelo exemplo; configure nele a conexão de banco e os demais valores locais. Para desenvolvimento com atualização automática dos recursos de interface, execute `npm run dev` em outro terminal.
+
+A aplicação estará disponível, por padrão, em `http://127.0.0.1:8000`.
+
+## API
+
+As rotas abaixo são definidas em `routes/api.php` e ficam sob o prefixo `/api`.
+
+| Método | Endpoint | Autenticação | Descrição |
+|---|---|---|---|
+| `POST` | `/api/cadastro_usuario` | Não exigida pela rota | Cadastra um usuário. |
+| `POST` | `/api/login` | Não | Autentica por CPF e senha e retorna um token. |
+| `POST` | `/api/logout` | Token Bearer | Encerra a sessão associada ao token. |
+| `GET` | `/api/user` | Token Bearer | Retorna o identificador do usuário autenticado. |
+| `POST` | `/api/desperdicios` | Token Bearer | Cria um registro de desperdício. |
+| `POST` | `/api/desperdicios/peso` | Token Bearer | Registra o peso de desperdício em um registro existente. |
+| `POST` | `/api/leituras` | Sem middleware de token na rota atual | Recebe uma leitura de dispositivo. |
+
+### Enviar uma leitura IoT
+
+`POST /api/leituras` recebe JSON. `device_id` (texto de até 64 caracteres) e `total` (numérico) são obrigatórios. `cell_1` a `cell_4` são valores numéricos opcionais e aceitam `null`.
+
+```json
+{
+  "device_id": "balanca-01",
+  "cell_1": 1.25,
+  "cell_2": 2.10,
+  "cell_3": null,
+  "cell_4": null,
+  "total": 3.35
+}
+```
+
+Exemplo mínimo:
+
+```json
+{
+  "device_id": "balanca-01",
+  "total": 3.35
+}
+```
+
+Resposta de sucesso (`201 Created`):
+
+```json
+{
+  "id": 1,
+  "status": "ok"
+}
+```
+
+Dados inválidos são rejeitados pela validação da API (`422 Unprocessable Content`). A documentação da integração com a balança ESP32, incluindo o acesso pela rede local e observações de calibração, está em [`docs/esp32-balanca.md`](docs/esp32-balanca.md).
+
+## Dados IoT e limitações conhecidas
+
+- As leituras são armazenadas na tabela `leituras`, com `device_id`, quatro células opcionais, total e timestamps.
+- O projeto também possui uma tabela `sensor` com um identificador, temperatura e umidade.
+- Não há relação explícita entre `sensor` e `leituras`; não se deve assumir que são o mesmo dispositivo ou que uma leitura corresponde a um sensor específico.
+- A API `/api/leituras` não tem middleware de autenticação configurado atualmente. Considere esse comportamento ao disponibilizar o serviço fora de uma rede controlada.
+- A unidade dos valores recebidos e a frequência de envio dependem da configuração e calibração do hardware; não são definidas pela validação da API.
+
+## Testes
+
+Execute a suíte Laravel com:
+
+```powershell
+php artisan test
+```
+
+Há testes de integração para o recebimento de leituras sem os valores individuais das células e para o envio com valores preenchidos.
